@@ -1094,10 +1094,10 @@ Item {
     //  FILEIO & CONFIG PERSISTENCE
     // =======================================================================
     FileIO { id: cfg; source: root.cfgPath }
-    property string cfgPath: "/opt/IC7/DDUDash.txt"
+    property string cfgPath: "/opt/IC7/screen_configs/DDUDash.txt"
     property var cfgCandidates: [
-        "/opt/Garw_IC7/DDUDash.txt",
-        "/opt/IC7/DDUDash.txt",
+        "/opt/Garw_IC7/screen_configs/DDUDash.txt",
+        "/opt/IC7/screen_configs/DDUDash.txt",
         "/home/root/DDUDash.txt"
     ]
 

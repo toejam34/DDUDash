@@ -67,8 +67,13 @@ Item {
     property int  tripmeter: d ? (d.tripmileage0data / 10) : 0   // tenths of km (matches GTDash)
     property int  gearpos:   d ? d.geardata         : 0      // 0=N, 1..8=gears, 9=P, 10=R
     property int  inputs:    d ? d.inputsdata       : 0      // bitmask of telltales / buttons
+    // turn-signal telltales mirror the flasher-relay bits (0x40 left / 0x80 right)
+    // directly (no dash-side blink timer) so the arrows light/darken in sync with
+    // the bulb -- refreshed each 40 ms by the input poll (evalEdges).
+    property bool tLeftActive:  false
+    property bool tRightActive: false
 
-    property real oiltemp:   d ? d.oiltempdata      : 0      // °C (native IAT)
+    property real oiltemp:   d ? d.oiltempdata      : 0      // °C (oil temp)
     property real oilpress:  d ? (d.oilpressuredata * 14.5038) : 0  // native BAR -> PSI
     property real oilPressShown: 0
     Behavior on oilPressShown { SmoothedAnimation { velocity: 60 } }
@@ -194,10 +199,12 @@ Item {
     }
 
     // Bundled font
-    FontLoader { id: uiFontR; source: "assets/DejaVuSans.ttf" }
+    FontLoader { id: uiFontR; source: "assets/DejaVuSans.ttf"
+        onStatusChanged: if (status === FontLoader.Ready && typeof bg !== 'undefined') bg.requestPaint() }
     FontLoader { id: uiFontB; source: "assets/DejaVuSans-Bold.ttf" }
-    readonly property string ff: (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? uiFontR.name : "Arial"
-    readonly property string menuFont: ff
+    // Canvas ctx.font needs the family QUOTED ("DejaVu Sans"); QML Text.font.family needs it UNQUOTED.
+    readonly property string ff:       (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? ('"' + uiFontR.name + '"') : "sans-serif"
+    readonly property string menuFont: (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? uiFontR.name : "sans-serif"
 
     // Debounce & Blink timers
     property bool blinkOn: true
@@ -391,7 +398,7 @@ Item {
     // =======================================================================
     Item {
         id: topShiftLeds
-        anchors.top: parent.top; anchors.topMargin: 10
+        anchors.top: parent.top; anchors.topMargin: 36   // dropped ~0.5cm to clear the dash cowl
         anchors.horizontalCenter: parent.horizontalCenter
         width: 320; height: 16
         visible: !root.hideShiftLights
@@ -448,10 +455,10 @@ Item {
             Rectangle {
                 x: 14; y: 142 + index * 32
                 width: 16; height: 7; radius: 3.5
-                color: (index === 1 || index === 2) ? "#00b4ff" : "#071622"
-                border.color: (index === 1 || index === 2) ? "#4de2ff" : "#0e2c44"
+                color: "#00b4ff"
+                border.color: "#4de2ff"
                 border.width: 1
-                opacity: (index === 1 || index === 2) ? 0.9 : 0.4
+                opacity: 0.9
             }
         }
         // Right 3
@@ -611,7 +618,7 @@ Item {
 
             Text {
                 x: 0; y: 2; width: 54
-                text: "IAT"
+                text: "OIL TEMP"
                 color: "#4fc3f7"
                 font.family: root.menuFont; font.bold: true; font.pixelSize: 11
             }
@@ -922,7 +929,7 @@ Item {
             Rectangle { x: 20; y: 52; width: 162; height: 1; color: "#051322" }
 
             // Row 3: IAT
-            Text { x: 20;  y: 58; text: "IAT";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
+            Text { x: 20;  y: 58; text: "OIL TEMP";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
             Text {
                 x: 88; y: 56; width: 50
                 text: root.peakOilTempMin < 1e8 ? fmtTemp(root.peakOilTempMin, root.oilTempUnits) : "--"
@@ -1087,11 +1094,11 @@ Item {
     //  FILEIO & CONFIG PERSISTENCE
     // =======================================================================
     FileIO { id: cfg; source: root.cfgPath }
-    property string cfgPath: "/opt/Garw_IC7/dash.cfg"
+    property string cfgPath: "/opt/IC7/DDUDash.txt"
     property var cfgCandidates: [
-        "/opt/Garw_IC7/dash.cfg",
-        "/opt/IC7/dash.cfg",
-        "/home/root/dash.cfg"
+        "/opt/Garw_IC7/DDUDash.txt",
+        "/opt/IC7/DDUDash.txt",
+        "/home/root/DDUDash.txt"
     ]
 
     function rline(i) {
@@ -1231,9 +1238,9 @@ Item {
         { k: "fuelHigh",      label: "FUEL HIGH" },
         { k: "fuelLow",       label: "FUEL LOW" },
         { k: "fuelDamp",      label: "FUEL DAMP" },
-        { k: "oilTempHigh",   label: "IAT HIGH" },
-        { k: "oilTempLow",    label: "IAT LOW" },
-        { k: "oilTempUnits",  label: "IAT UNITS" },
+        { k: "oilTempHigh",   label: "OIL TEMP HIGH" },
+        { k: "oilTempLow",    label: "OIL TEMP LOW" },
+        { k: "oilTempUnits",  label: "OIL TEMP UNITS" },
         { k: "oilPressHigh",  label: "OIL PRESS HIGH" },
         { k: "oilPressLow",   label: "OIL PRESS LOW" },
         { k: "oilPressUnits", label: "OIL PRESS UNITS" },
@@ -1343,10 +1350,27 @@ Item {
             }
         }
 
+        // mirror the flasher/bulb state (poll-driven; robust on backends that
+        // don't emit change signals)
+        root.tLeftActive  = ((root.inputs & 0x40) !== 0);
+        root.tRightActive = ((root.inputs & 0x80) !== 0);
         pUp = u; pDown = d; pLeft = l; pRight = r;
     }
 
     Timer { interval: 40; repeat: true; running: true; onTriggered: evalEdges() }
+
+    // ---- turn-signal arrows (top corners), blinking with the flasher relay ----
+    Image {   // left indicator (inputsdata 0x40)
+        source: "assets/left_indicator.png"
+        x: 36; y: 39; height: 42; fillMode: Image.PreserveAspectFit; smooth: true
+        visible: root.tLeftActive
+    }
+    Image {   // right indicator (inputsdata 0x80)
+        source: "assets/right_indicator.png"
+        anchors.right: parent.right; anchors.rightMargin: 36
+        y: 39; height: 42; fillMode: Image.PreserveAspectFit; smooth: true
+        visible: root.tRightActive
+    }
 
     // =======================================================================
     //  SETTINGS MENU OVERLAY

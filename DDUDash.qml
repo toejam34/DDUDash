@@ -396,34 +396,42 @@ Item {
         width: 320; height: 16
         visible: !root.hideShiftLights
 
+        // Sequential proportional shift bar:
+        // first green segment starts at 50% of the configured redline,
+        // then the bar fills green -> yellow -> red as RPM rises.
         Row {
             anchors.centerIn: parent
             spacing: 8
             Repeater {
-                model: [
-                    { rpmThresh: 5500, col: "#00e640" },
-                    { rpmThresh: 6100, col: "#00e640" },
-                    { rpmThresh: 6700, col: "#00e640" },
-                    { rpmThresh: 7200, col: "#00e640" },
-                    { rpmThresh: 7600, col: "#00e640" },
-                    { rpmThresh: 7950, col: "#00e640" },
-                    { rpmThresh: 8150, col: "#ffcc00" },
-                    { rpmThresh: 8380, col: "#ffcc00" },
-                    { rpmThresh: 8550, col: "#ff2233" },
-                    { rpmThresh: 8750, col: "#ff2233" }
-                ]
+                model: 10
                 Rectangle {
                     width: 20; height: 9; radius: 4.5
-                    readonly property bool lit: root.selfTest || (root.rpmShown >= modelData.rpmThresh)
-                    color: lit ? modelData.col : "#071622"
+
+                    readonly property real startFrac: 0.50
+                    readonly property real spanFrac: 0.50
+                    readonly property real segmentFrac: (index + 1) / 10.0
+                    readonly property real rpmThreshold:
+                        root.rpmredline * (startFrac + spanFrac * segmentFrac)
+
+                    readonly property bool lit:
+                        root.selfTest || (root.rpmShown >= rpmThreshold)
+
+                    readonly property color segmentColor:
+                        index < 6 ? "#00e640"
+                        : index < 8 ? "#ffcc00"
+                        : "#ff2233"
+
+                    color: lit ? segmentColor : "#071622"
                     border.color: lit ? "#ffffff" : "#0d283c"
                     border.width: 1
                     opacity: lit ? 1.0 : 0.4
+
                     Rectangle {
                         visible: parent.lit
                         anchors.centerIn: parent
                         width: 24; height: 13; radius: 6
-                        color: parent.color; opacity: 0.35
+                        color: parent.segmentColor
+                        opacity: 0.35
                     }
                 }
             }
@@ -737,7 +745,9 @@ Item {
 
                 readonly property real valFrac: {
                     var l = root.afr / 14.7;
-                    var f = (l - root.afrLow) / Math.max(0.001, root.afrHigh - root.afrLow);
+                    // Fixed Lambda scale: 0.80 left, 1.00 centre, 1.20 right.
+                    // Warning limits remain configurable separately.
+                    var f = (l - 0.80) / 0.40;
                     var realF = Math.max(0, Math.min(1, f));
                     return root.selfTest ? (root.sweepFrac * (1 - root.settle) + realF * root.settle) : realF;
                 }
@@ -770,8 +780,12 @@ Item {
                 horizontalAlignment: Text.AlignRight
             }
 
-            Text { x: 58; y: 20; text: "RICH"; color: "#2d618c"; font.family: root.menuFont; font.pixelSize: 8; font.bold: true }
-            Text { x: 126; y: 20; text: "LEAN"; color: "#2d618c"; font.family: root.menuFont; font.pixelSize: 8; font.bold: true }
+            Row {
+                x: 58; y: 20; width: 90; height: 12
+                Text { width: 30; text: "0.80"; color: "#2d618c"; font.family: root.menuFont; font.pixelSize: 8; font.bold: true; horizontalAlignment: Text.AlignLeft }
+                Text { width: 30; text: "1.00"; color: "#ffffff"; font.family: root.menuFont; font.pixelSize: 8; font.bold: true; horizontalAlignment: Text.AlignHCenter }
+                Text { width: 30; text: "1.20"; color: "#2d618c"; font.family: root.menuFont; font.pixelSize: 8; font.bold: true; horizontalAlignment: Text.AlignRight }
+            }
         }
 
         // -------------------------------------------------------------
@@ -864,59 +878,59 @@ Item {
             x: 0; y: 108; width: 200; height: 140
 
             // Column headers
-            Text { x: 30;  y: 0; text: "";      color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8 }
-            Text { x: 100; y: 0; text: "LOW";   color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 44 }
-            Text { x: 148; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 44 }
+            Text { x: 20;  y: 0; text: "";      color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8 }
+            Text { x: 88; y: 0; text: "LOW";   color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
+            Text { x: 154; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
 
             // Divider
-            Rectangle { x: 30; y: 12; width: 162; height: 1; color: "#0d3659" }
+            Rectangle { x: 20; y: 12; width: 184; height: 1; color: "#0d3659" }
 
             // Row 1: RPM
-            Text { x: 30;  y: 18; text: "RPM";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10 }
+            Text { x: 20;  y: 18; text: "RPM";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
             Text {
-                x: 100; y: 16; width: 44
+                x: 88; y: 16; width: 50
                 text: root.peakRpmMin < 1e8 ? String(Math.round(root.peakRpmMin)) : "--"
                 color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 148; y: 16; width: 44
+                x: 154; y: 16; width: 50
                 text: root.peakRpm > 0 ? String(Math.round(root.peakRpm)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
 
             // Row divider
-            Rectangle { x: 30; y: 32; width: 162; height: 1; color: "#051322" }
+            Rectangle { x: 20; y: 32; width: 162; height: 1; color: "#051322" }
 
             // Row 2: SPEED
-            Text { x: 30;  y: 38; text: "SPEED"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10 }
+            Text { x: 20;  y: 38; text: "SPEED"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
             Text {
-                x: 100; y: 36; width: 44
+                x: 88; y: 36; width: 50
                 text: root.peakSpeedMin < 1e8 ? String(Math.round(root.speedunits === 0 ? root.peakSpeedMin : root.peakSpeedMin * 0.621371)) : "--"
                 color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 148; y: 36; width: 44
+                x: 154; y: 36; width: 50
                 text: root.peakSpeed > 0 ? String(Math.round(root.speedunits === 0 ? root.peakSpeed : root.peakSpeed * 0.621371)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
 
             // Row divider
-            Rectangle { x: 30; y: 52; width: 162; height: 1; color: "#051322" }
+            Rectangle { x: 20; y: 52; width: 162; height: 1; color: "#051322" }
 
             // Row 3: IAT
-            Text { x: 30;  y: 58; text: "IAT";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10 }
+            Text { x: 20;  y: 58; text: "IAT";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
             Text {
-                x: 100; y: 56; width: 44
+                x: 88; y: 56; width: 50
                 text: root.peakOilTempMin < 1e8 ? fmtTemp(root.peakOilTempMin, root.oilTempUnits) : "--"
                 color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 148; y: 56; width: 44
+                x: 154; y: 56; width: 50
                 text: root.peakOilTemp > -1e8 ? fmtTemp(root.peakOilTemp, root.oilTempUnits) : "--"
                 color: (root.peakOilTemp >= root.oilTempHigh) ? "#ff4444" : "#ffffff"
                 font.family: root.menuFont; font.bold: true; font.pixelSize: 11
@@ -924,25 +938,25 @@ Item {
             }
 
             // Row divider
-            Rectangle { x: 30; y: 72; width: 162; height: 1; color: "#051322" }
+            Rectangle { x: 20; y: 72; width: 162; height: 1; color: "#051322" }
 
             // Row 4: λ / AFR
-            Text { x: 30;  y: 78; text: root.afrSource === 1 ? "\u03BB" : "AFR"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10 }
+            Text { x: 20;  y: 78; text: root.afrSource === 1 ? "\u03BB" : "AFR"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
             Text {
-                x: 100; y: 76; width: 44
+                x: 88; y: 76; width: 50
                 text: root.peakAfrMin < 1e8 ? (root.afrSource === 1 ? (root.peakAfrMin / 14.7).toFixed(2) : root.peakAfrMin.toFixed(1)) : "--"
                 color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 148; y: 76; width: 44
+                x: 154; y: 76; width: 50
                 text: root.peakAfrMax > -1e8 ? (root.afrSource === 1 ? (root.peakAfrMax / 14.7).toFixed(2) : root.peakAfrMax.toFixed(1)) : "--"
                 color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
                 horizontalAlignment: Text.AlignRight
             }
 
             // Bottom divider
-            Rectangle { x: 30; y: 92; width: 162; height: 1; color: "#0d3659" }
+            Rectangle { x: 20; y: 92; width: 162; height: 1; color: "#0d3659" }
         }
 
 

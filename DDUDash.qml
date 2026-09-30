@@ -67,6 +67,11 @@ Item {
     property int  tripmeter: d ? (d.tripmileage0data / 10) : 0   // tenths of km (matches GTDash)
     property int  gearpos:   d ? d.geardata         : 0      // 0=N, 1..8=gears, 9=P, 10=R
     property int  inputs:    d ? d.inputsdata       : 0      // bitmask of telltales / buttons
+    // turn-signal telltales mirror the flasher-relay bits (0x40 left / 0x80 right)
+    // directly (no dash-side blink timer) so the arrows light/darken in sync with
+    // the bulb -- refreshed each 40 ms by the input poll (evalEdges).
+    property bool tLeftActive:  false
+    property bool tRightActive: false
 
     property real oiltemp:   d ? d.oiltempdata      : 0      // °C (native IAT)
     property real oilpress:  d ? (d.oilpressuredata * 14.5038) : 0  // native BAR -> PSI
@@ -101,8 +106,8 @@ Item {
     property int  fuelHigh:      90
     property int  fuelLow:       15    // %
     property int  fuelDamp:      3
-    property real oilTempHigh:   130   // °C
-    property real oilTempLow:    40    // °C
+    property real oilTempHigh:   75    // °C
+    property real oilTempLow:    10    // °C
     property int  oilTempUnits:  0     // 0 = °C, 1 = °F, 2 = OFF
     property real oilPressHigh:  90    // PSI
     property real oilPressLow:   15    // PSI
@@ -196,8 +201,8 @@ Item {
     // Bundled font
     FontLoader { id: uiFontR; source: "assets/DejaVuSans.ttf" }
     FontLoader { id: uiFontB; source: "assets/DejaVuSans-Bold.ttf" }
-    readonly property string ff: (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? uiFontR.name : "Arial"
-    readonly property string menuFont: ff
+    readonly property string ff:       (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? ('"' + uiFontR.name + '"') : "sans-serif"
+    readonly property string menuFont: (uiFontR.status === FontLoader.Ready && uiFontR.name !== "") ? uiFontR.name : "sans-serif"
 
     // Debounce & Blink timers
     property bool blinkOn: true
@@ -391,7 +396,7 @@ Item {
     // =======================================================================
     Item {
         id: topShiftLeds
-        anchors.top: parent.top; anchors.topMargin: 10
+        anchors.top: parent.top; anchors.topMargin: 36   // dropped ~0.5cm to clear the dash cowl
         anchors.horizontalCenter: parent.horizontalCenter
         width: 320; height: 16
         visible: !root.hideShiftLights
@@ -448,10 +453,10 @@ Item {
             Rectangle {
                 x: 14; y: 142 + index * 32
                 width: 16; height: 7; radius: 3.5
-                color: (index === 1 || index === 2) ? "#00b4ff" : "#071622"
-                border.color: (index === 1 || index === 2) ? "#4de2ff" : "#0e2c44"
+                color: "#00b4ff"
+                border.color: "#4de2ff"
                 border.width: 1
-                opacity: (index === 1 || index === 2) ? 0.9 : 0.4
+                opacity: 0.9
             }
         }
         // Right 3
@@ -875,88 +880,88 @@ Item {
         // PEAKS TABLE: Label | MIN | MAX  (compact, no bars)
         // -------------------------------------------------------------
         Item {
-            x: 0; y: 108; width: 200; height: 140
+            x: 0; y: 108; width: 200; height: 184
 
             // Column headers
-            Text { x: 20;  y: 0; text: "";      color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8 }
-            Text { x: 88; y: 0; text: "LOW";   color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
-            Text { x: 154; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 8; horizontalAlignment: Text.AlignRight; width: 50 }
+            Text { x: 20;  y: 0; text: "";      color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10 }
+            Text { x: 88; y: 0; text: "LOW";   color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10; horizontalAlignment: Text.AlignRight; width: 50 }
+            Text { x: 154; y: 0; text: "HIGH";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 10; horizontalAlignment: Text.AlignRight; width: 50 }
 
             // Divider
-            Rectangle { x: 20; y: 12; width: 184; height: 1; color: "#0d3659" }
+            Rectangle { x: 20; y: 16; width: 184; height: 1; color: "#0d3659" }
 
             // Row 1: RPM
-            Text { x: 20;  y: 18; text: "RPM";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
+            Text { x: 20;  y: 25; text: "RPM";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14 }
             Text {
-                x: 88; y: 16; width: 50
+                x: 88; y: 22; width: 50
                 text: root.peakRpmMin < 1e8 ? String(Math.round(root.peakRpmMin)) : "--"
-                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 16; width: 50
+                x: 154; y: 22; width: 50
                 text: root.peakRpm > 0 ? String(Math.round(root.peakRpm)) : "--"
-                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
 
             // Row divider
-            Rectangle { x: 20; y: 32; width: 162; height: 1; color: "#051322" }
+            Rectangle { x: 20; y: 44; width: 162; height: 1; color: "#051322" }
 
             // Row 2: SPEED
-            Text { x: 20;  y: 38; text: "SPEED"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
+            Text { x: 20;  y: 53; text: "SPEED"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14 }
             Text {
-                x: 88; y: 36; width: 50
+                x: 88; y: 50; width: 50
                 text: root.peakSpeedMin < 1e8 ? String(Math.round(root.speedunits === 0 ? root.peakSpeedMin : root.peakSpeedMin * 0.621371)) : "--"
-                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 36; width: 50
+                x: 154; y: 50; width: 50
                 text: root.peakSpeed > 0 ? String(Math.round(root.speedunits === 0 ? root.peakSpeed : root.peakSpeed * 0.621371)) : "--"
-                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
-                horizontalAlignment: Text.AlignRight
-            }
-
-            // Row divider
-            Rectangle { x: 20; y: 52; width: 162; height: 1; color: "#051322" }
-
-            // Row 3: IAT
-            Text { x: 20;  y: 58; text: "IAT";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
-            Text {
-                x: 88; y: 56; width: 50
-                text: root.peakOilTempMin < 1e8 ? fmtTemp(root.peakOilTempMin, root.oilTempUnits) : "--"
-                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
-                horizontalAlignment: Text.AlignRight
-            }
-            Text {
-                x: 154; y: 56; width: 50
-                text: root.peakOilTemp > -1e8 ? fmtTemp(root.peakOilTemp, root.oilTempUnits) : "--"
-                color: (root.peakOilTemp >= root.oilTempHigh) ? "#ff4444" : "#ffffff"
-                font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
 
             // Row divider
             Rectangle { x: 20; y: 72; width: 162; height: 1; color: "#051322" }
 
-            // Row 4: λ / AFR
-            Text { x: 20;  y: 78; text: root.afrSource === 1 ? "\u03BB" : "AFR"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11 }
+            // Row 3: IAT
+            Text { x: 20;  y: 81; text: "IAT";  color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14 }
             Text {
-                x: 88; y: 76; width: 50
-                text: root.peakAfrMin < 1e8 ? (root.afrSource === 1 ? (root.peakAfrMin / 14.7).toFixed(2) : root.peakAfrMin.toFixed(1)) : "--"
-                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                x: 88; y: 78; width: 50
+                text: root.peakOilTempMin < 1e8 ? fmtTemp(root.peakOilTempMin, root.oilTempUnits) : "--"
+                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
             Text {
-                x: 154; y: 76; width: 50
+                x: 154; y: 78; width: 50
+                text: root.peakOilTemp > -1e8 ? fmtTemp(root.peakOilTemp, root.oilTempUnits) : "--"
+                color: (root.peakOilTemp >= root.oilTempHigh) ? "#ff4444" : "#ffffff"
+                font.family: root.menuFont; font.bold: true; font.pixelSize: 14
+                horizontalAlignment: Text.AlignRight
+            }
+
+            // Row divider
+            Rectangle { x: 20; y: 100; width: 162; height: 1; color: "#051322" }
+
+            // Row 4: λ / AFR
+            Text { x: 20;  y: 109; text: root.afrSource === 1 ? "\u03BB" : "AFR"; color: "#4fc3f7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14 }
+            Text {
+                x: 88; y: 106; width: 50
+                text: root.peakAfrMin < 1e8 ? (root.afrSource === 1 ? (root.peakAfrMin / 14.7).toFixed(2) : root.peakAfrMin.toFixed(1)) : "--"
+                color: "#8aa5c7"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
+                horizontalAlignment: Text.AlignRight
+            }
+            Text {
+                x: 154; y: 106; width: 50
                 text: root.peakAfrMax > -1e8 ? (root.afrSource === 1 ? (root.peakAfrMax / 14.7).toFixed(2) : root.peakAfrMax.toFixed(1)) : "--"
-                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 11
+                color: "#ffffff"; font.family: root.menuFont; font.bold: true; font.pixelSize: 14
                 horizontalAlignment: Text.AlignRight
             }
 
             // Bottom divider
-            Rectangle { x: 20; y: 92; width: 162; height: 1; color: "#0d3659" }
+            Rectangle { x: 20; y: 128; width: 162; height: 1; color: "#0d3659" }
         }
 
 
@@ -1292,8 +1297,8 @@ Item {
         else if (k === "fuelHigh")    root.fuelHigh = Math.max(50, Math.min(100, root.fuelHigh + dir * 5));
         else if (k === "fuelLow")     root.fuelLow = Math.max(5, Math.min(40, root.fuelLow + dir));
         else if (k === "fuelDamp")    root.fuelDamp = Math.max(0, Math.min(9, root.fuelDamp + dir));
-        else if (k === "oilTempHigh") root.oilTempHigh = Math.max(70, Math.min(160, root.oilTempHigh + dir));
-        else if (k === "oilTempLow")  root.oilTempLow = Math.max(20, Math.min(100, root.oilTempLow + dir));
+        else if (k === "oilTempHigh") root.oilTempHigh = Math.max(40, Math.min(160, root.oilTempHigh + dir));
+        else if (k === "oilTempLow")  root.oilTempLow = Math.max(0, Math.min(100, root.oilTempLow + dir));
         else if (k === "oilTempUnits") { root.oilTempUnits = (root.oilTempUnits + dir + 3) % 3; bg.requestPaint(); }
         else if (k === "oilPressHigh") root.oilPressHigh = Math.max(30, Math.min(150, root.oilPressHigh + dir * 5));
         else if (k === "oilPressLow")  root.oilPressLow = Math.max(5, Math.min(50, root.oilPressLow + dir));
@@ -1343,10 +1348,27 @@ Item {
             }
         }
 
+        // mirror the flasher/bulb state (poll-driven; robust on backends that
+        // don't emit change signals)
+        root.tLeftActive  = ((root.inputs & 0x40) !== 0);
+        root.tRightActive = ((root.inputs & 0x80) !== 0);
         pUp = u; pDown = d; pLeft = l; pRight = r;
     }
 
     Timer { interval: 40; repeat: true; running: true; onTriggered: evalEdges() }
+
+    // ---- turn-signal arrows (top corners), blinking with the flasher relay ----
+    Image {   // left indicator (inputsdata 0x40)
+        source: "assets/left_indicator.png"
+        x: 36; y: 39; height: 42; fillMode: Image.PreserveAspectFit; smooth: true
+        visible: root.tLeftActive
+    }
+    Image {   // right indicator (inputsdata 0x80)
+        source: "assets/right_indicator.png"
+        anchors.right: parent.right; anchors.rightMargin: 36
+        y: 39; height: 42; fillMode: Image.PreserveAspectFit; smooth: true
+        visible: root.tRightActive
+    }
 
     // =======================================================================
     //  SETTINGS MENU OVERLAY
